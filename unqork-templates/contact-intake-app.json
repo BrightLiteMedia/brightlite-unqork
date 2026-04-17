@@ -1,0 +1,1056 @@
+{
+  "_comment": "Brightlite Middleware — Contact / Intake Application Template",
+  "_version": "2.0.0",
+  "_middlewareBase": "{{connection.BRIGHTLITE_API_URL}}",
+  "_authHeaders": "Every plug sends X-Client-ID and X-API-Key from Unqork Connection Manager",
+
+  "app": {
+    "_id": "bl-contact-app-001",
+    "name": "Brightlite Contact & Intake",
+    "tag": "brightlite-contact",
+    "description": "OTP-verified contact form with AI classification and internal admin dashboard. Configure BRIGHTLITE_API_URL, BRIGHTLITE_CLIENT_ID, and BRIGHTLITE_API_KEY in Unqork Connection Manager.",
+    "entryModule": "mod-contact-step1",
+    "version": "1.0.0",
+    "status": "active",
+
+    "globalVariables": {
+      "MIDDLEWARE_BASE_URL": "{{connection.BRIGHTLITE_API_URL}}",
+      "OTP_TOKEN_ID": "",
+      "SUBMISSION_ID": ""
+    },
+
+    "modules": [
+
+      {
+        "_id": "mod-contact-step1",
+        "name": "Contact Info & Verify",
+        "tag": "contact-step-1",
+        "description": "Collects user contact info and sends an OTP code to verify identity.",
+
+        "components": [
+
+          {
+            "componentType": "heading",
+            "propertyName": "heading_intro",
+            "label": "Get In Touch",
+            "size": "h2",
+            "order": 1
+          },
+
+          {
+            "componentType": "paragraph",
+            "propertyName": "para_intro",
+            "label": "Fill in your details and we'll send you a verification code.",
+            "order": 2
+          },
+
+          {
+            "componentType": "textfield",
+            "propertyName": "name",
+            "label": "Full Name",
+            "placeholder": "Jane Smith",
+            "required": true,
+            "validation": {
+              "minLength": 2
+            },
+            "order": 3
+          },
+
+          {
+            "componentType": "email",
+            "propertyName": "email",
+            "label": "Email Address",
+            "placeholder": "jane@example.com",
+            "required": true,
+            "order": 4
+          },
+
+          {
+            "componentType": "phoneNumber",
+            "propertyName": "phone",
+            "label": "Phone (optional — for SMS verification)",
+            "required": false,
+            "order": 5
+          },
+
+          {
+            "componentType": "dropdown",
+            "propertyName": "otp_channel",
+            "label": "Send verification code via",
+            "required": true,
+            "defaultValue": "email",
+            "options": [
+              { "label": "Email", "value": "email" },
+              { "label": "SMS", "value": "sms" }
+            ],
+            "conditionals": [
+              {
+                "when": "otp_channel == 'sms'",
+                "show": ["phone"],
+                "require": ["phone"]
+              }
+            ],
+            "order": 6
+          },
+
+          {
+            "componentType": "hidden",
+            "propertyName": "otp_destination",
+            "label": "OTP Destination (computed)",
+            "order": 7
+          },
+
+          {
+            "componentType": "hidden",
+            "propertyName": "otp_token_id",
+            "label": "OTP Token ID (from API response)",
+            "order": 8
+          },
+
+          {
+            "componentType": "hidden",
+            "propertyName": "otp_expires_at",
+            "label": "OTP Expires At",
+            "order": 9
+          },
+
+          {
+            "componentType": "initializer",
+            "propertyName": "init_set_destination",
+            "label": "Set OTP destination from channel selection",
+            "trigger": "onChange",
+            "watchFields": ["otp_channel", "email", "phone"],
+            "actions": [
+              {
+                "type": "setField",
+                "target": "otp_destination",
+                "formula": "otp_channel == 'sms' ? phone : email"
+              }
+            ],
+            "order": 10
+          },
+
+          {
+            "componentType": "plug",
+            "propertyName": "plug_send_otp",
+            "label": "Send OTP Code",
+            "description": "POST /otp/send — sends a 6-digit code to the user's chosen channel",
+            "trigger": "manual",
+            "triggeredBy": "btn_send_otp",
+            "providers": [
+              {
+                "type": "HTTP",
+                "method": "POST",
+                "url": "{{connection.BRIGHTLITE_API_URL}}/otp/send",
+                "headers": {
+                  "Content-Type": "application/json",
+                  "X-Client-ID":  "{{connection.BRIGHTLITE_CLIENT_ID}}",
+                  "X-API-Key":    "{{connection.BRIGHTLITE_API_KEY}}"
+                },
+                "body": {
+                  "channel": "{{otp_channel}}",
+                  "destination": "{{otp_destination}}"
+                },
+                "onSuccess": {
+                  "mapOutputs": [
+                    { "source": "response.tokenId", "target": "otp_token_id" },
+                    { "source": "response.expiresAt", "target": "otp_expires_at" }
+                  ],
+                  "showNotification": {
+                    "type": "success",
+                    "message": "Verification code sent! Check your {{otp_channel}}."
+                  },
+                  "navigateTo": "mod-contact-step2",
+                  "passFields": ["name", "email", "phone", "otp_token_id", "otp_channel", "otp_destination"]
+                },
+                "onError": {
+                  "showNotification": {
+                    "type": "error",
+                    "message": "Could not send verification code. Please check your details and try again."
+                  }
+                }
+              }
+            ],
+            "order": 11
+          },
+
+          {
+            "componentType": "button",
+            "propertyName": "btn_send_otp",
+            "label": "Send Verification Code",
+            "style": "primary",
+            "validatesFields": ["name", "email", "otp_channel"],
+            "triggers": "plug_send_otp",
+            "order": 12
+          }
+
+        ]
+      },
+
+      {
+        "_id": "mod-contact-step2",
+        "name": "Verify OTP",
+        "tag": "contact-step-2",
+        "description": "User enters the 6-digit code sent to their email or phone.",
+
+        "components": [
+
+          {
+            "componentType": "heading",
+            "propertyName": "heading_verify",
+            "label": "Enter Your Code",
+            "size": "h2",
+            "order": 1
+          },
+
+          {
+            "componentType": "paragraph",
+            "propertyName": "para_verify",
+            "label": "We sent a 6-digit code to {{otp_destination}}. Enter it below.",
+            "order": 2
+          },
+
+          {
+            "componentType": "hidden",
+            "propertyName": "name",
+            "label": "Carried name",
+            "order": 3
+          },
+
+          {
+            "componentType": "hidden",
+            "propertyName": "email",
+            "label": "Carried email",
+            "order": 4
+          },
+
+          {
+            "componentType": "hidden",
+            "propertyName": "phone",
+            "label": "Carried phone",
+            "order": 5
+          },
+
+          {
+            "componentType": "hidden",
+            "propertyName": "otp_token_id",
+            "label": "Carried OTP Token ID",
+            "order": 6
+          },
+
+          {
+            "componentType": "hidden",
+            "propertyName": "otp_destination",
+            "label": "Carried OTP destination",
+            "order": 7
+          },
+
+          {
+            "componentType": "textfield",
+            "propertyName": "otp_code",
+            "label": "Verification Code",
+            "placeholder": "123456",
+            "required": true,
+            "inputType": "number",
+            "maxLength": 6,
+            "minLength": 6,
+            "validation": {
+              "pattern": "^[0-9]{6}$",
+              "message": "Must be exactly 6 digits"
+            },
+            "order": 8
+          },
+
+          {
+            "componentType": "plug",
+            "propertyName": "plug_verify_otp",
+            "label": "Verify Code",
+            "trigger": "manual",
+            "triggeredBy": "btn_verify_otp",
+            "providers": [
+              {
+                "type": "HTTP",
+                "method": "POST",
+                "url": "{{connection.BRIGHTLITE_API_URL}}/otp/verify",
+                "headers": {
+                  "Content-Type": "application/json",
+                  "X-Client-ID":  "{{connection.BRIGHTLITE_CLIENT_ID}}",
+                  "X-API-Key":    "{{connection.BRIGHTLITE_API_KEY}}"
+                },
+                "body": {
+                  "tokenId": "{{otp_token_id}}",
+                  "code": "{{otp_code}}"
+                },
+                "onSuccess": {
+                  "conditions": [
+                    {
+                      "when": "response.valid == true",
+                      "actions": [
+                        {
+                          "type": "navigate",
+                          "target": "mod-contact-step3",
+                          "passFields": ["name", "email", "phone", "otp_token_id"]
+                        }
+                      ]
+                    },
+                    {
+                      "when": "response.valid == false",
+                      "actions": [
+                        {
+                          "type": "showNotification",
+                          "config": {
+                            "type": "error",
+                            "message": "Invalid or expired code. Please try again."
+                          }
+                        },
+                        {
+                          "type": "clearField",
+                          "target": "otp_code"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "onError": {
+                  "showNotification": {
+                    "type": "error",
+                    "message": "Verification failed. Please request a new code."
+                  }
+                }
+              }
+            ],
+            "order": 9
+          },
+
+          {
+            "componentType": "button",
+            "propertyName": "btn_verify_otp",
+            "label": "Verify Code",
+            "style": "primary",
+            "validatesFields": ["otp_code"],
+            "triggers": "plug_verify_otp",
+            "order": 10
+          },
+
+          {
+            "componentType": "button",
+            "propertyName": "btn_back_step1",
+            "label": "← Back",
+            "style": "secondary",
+            "navigateTo": "mod-contact-step1",
+            "order": 11
+          },
+
+          {
+            "componentType": "button",
+            "propertyName": "btn_resend_otp",
+            "label": "Resend Code",
+            "style": "link",
+            "navigateTo": "mod-contact-step1",
+            "order": 12
+          }
+
+        ]
+      },
+
+      {
+        "_id": "mod-contact-step3",
+        "name": "Your Message",
+        "tag": "contact-step-3",
+        "description": "Collects the user's message and submits to middleware. AI classification, spam detection, and routing happen server-side.",
+
+        "components": [
+
+          {
+            "componentType": "heading",
+            "propertyName": "heading_message",
+            "label": "Tell Us How We Can Help",
+            "size": "h2",
+            "order": 1
+          },
+
+          {
+            "componentType": "hidden",
+            "propertyName": "name",
+            "label": "Carried name",
+            "order": 2
+          },
+
+          {
+            "componentType": "hidden",
+            "propertyName": "email",
+            "label": "Carried email",
+            "order": 3
+          },
+
+          {
+            "componentType": "hidden",
+            "propertyName": "phone",
+            "label": "Carried phone",
+            "order": 4
+          },
+
+          {
+            "componentType": "hidden",
+            "propertyName": "otp_token_id",
+            "label": "Carried OTP Token ID",
+            "order": 5
+          },
+
+          {
+            "componentType": "output",
+            "propertyName": "output_greeting",
+            "label": "Hi {{name}} ({{email}}) — your identity is verified.",
+            "style": "info-banner",
+            "order": 6
+          },
+
+          {
+            "componentType": "textarea",
+            "propertyName": "message",
+            "label": "Message",
+            "placeholder": "Describe what you need help with...",
+            "required": true,
+            "validation": {
+              "minLength": 10,
+              "message": "Please enter at least 10 characters"
+            },
+            "order": 7
+          },
+
+          {
+            "componentType": "hidden",
+            "propertyName": "submission_id",
+            "label": "Submission ID (from API response)",
+            "order": 8
+          },
+
+          {
+            "componentType": "hidden",
+            "propertyName": "ai_category",
+            "label": "AI Category (from API response)",
+            "order": 9
+          },
+
+          {
+            "componentType": "hidden",
+            "propertyName": "ai_sentiment",
+            "label": "AI Sentiment (from API response)",
+            "order": 10
+          },
+
+          {
+            "componentType": "hidden",
+            "propertyName": "is_spam",
+            "label": "Spam flag (from API response)",
+            "order": 11
+          },
+
+          {
+            "componentType": "plug",
+            "propertyName": "plug_contact_submit",
+            "label": "Submit Contact Form",
+            "description": "POST /contact/submit — AI classification runs server-side. Returns submissionId, category, sentiment, isSpam.",
+            "trigger": "manual",
+            "triggeredBy": "btn_submit_message",
+            "providers": [
+              {
+                "type": "HTTP",
+                "method": "POST",
+                "url": "{{connection.BRIGHTLITE_API_URL}}/contact/submit",
+                "headers": {
+                  "Content-Type": "application/json",
+                  "X-Client-ID":  "{{connection.BRIGHTLITE_CLIENT_ID}}",
+                  "X-API-Key":    "{{connection.BRIGHTLITE_API_KEY}}"
+                },
+                "body": {
+                  "name": "{{name}}",
+                  "email": "{{email}}",
+                  "phone": "{{phone}}",
+                  "message": "{{message}}",
+                  "otpTokenId": "{{otp_token_id}}"
+                },
+                "onSuccess": {
+                  "mapOutputs": [
+                    { "source": "response.submissionId", "target": "submission_id" },
+                    { "source": "response.category",     "target": "ai_category" },
+                    { "source": "response.sentiment",    "target": "ai_sentiment" },
+                    { "source": "response.isSpam",       "target": "is_spam" }
+                  ],
+                  "navigateTo": "mod-contact-step4-confirmation"
+                },
+                "onError": {
+                  "showNotification": {
+                    "type": "error",
+                    "message": "Submission failed. Please try again."
+                  }
+                }
+              }
+            ],
+            "order": 12
+          },
+
+          {
+            "componentType": "button",
+            "propertyName": "btn_submit_message",
+            "label": "Send Message",
+            "style": "primary",
+            "validatesFields": ["message"],
+            "triggers": "plug_contact_submit",
+            "order": 13
+          }
+
+        ]
+      },
+
+      {
+        "_id": "mod-contact-step4-confirmation",
+        "name": "Confirmation",
+        "tag": "contact-step-4-confirm",
+        "description": "Displays submission confirmation. Shows reference ID.",
+
+        "components": [
+
+          {
+            "componentType": "hidden",
+            "propertyName": "submission_id",
+            "label": "Carried Submission ID",
+            "order": 1
+          },
+
+          {
+            "componentType": "heading",
+            "propertyName": "heading_thanks",
+            "label": "Message Received!",
+            "size": "h2",
+            "order": 2
+          },
+
+          {
+            "componentType": "output",
+            "propertyName": "output_confirmation",
+            "label": "Thanks for reaching out. Your reference ID is <strong>{{submission_id}}</strong>. We'll be in touch via email shortly.",
+            "style": "success-banner",
+            "order": 3
+          },
+
+          {
+            "componentType": "button",
+            "propertyName": "btn_start_over",
+            "label": "Submit Another Message",
+            "style": "secondary",
+            "navigateTo": "mod-contact-step1",
+            "order": 4
+          }
+
+        ]
+      },
+
+      {
+        "_id": "mod-setup-wizard",
+        "name": "Setup — Configure This App",
+        "tag": "setup-wizard",
+        "description": "One-time setup module. Run after installing the addon. Saves client-specific config (services, schedule, routing) to the middleware via PATCH /admin/clients/:id. Requires BRIGHTLITE_CLIENT_ID and BRIGHTLITE_API_KEY to already be set in Connection Manager.",
+        "accessControl": { "roles": ["admin"] },
+
+        "components": [
+
+          {
+            "componentType": "heading",
+            "propertyName": "heading_setup",
+            "label": "Configure Your Brightlite Integration",
+            "size": "h2",
+            "order": 1
+          },
+
+          {
+            "componentType": "paragraph",
+            "propertyName": "para_setup",
+            "label": "Complete this form once to set up your services, schedule, and routing. You can return here any time to update your settings.",
+            "order": 2
+          },
+
+          {
+            "componentType": "textfield",
+            "propertyName": "setup_client_name",
+            "label": "Organization Name",
+            "placeholder": "Acme Corp",
+            "required": true,
+            "helpText": "Appears in confirmation emails and SMS messages sent to your customers.",
+            "order": 3
+          },
+
+          {
+            "componentType": "dropdown",
+            "propertyName": "setup_timezone",
+            "label": "Timezone",
+            "required": true,
+            "defaultValue": "America/Chicago",
+            "options": [
+              { "label": "Eastern (ET)",  "value": "America/New_York" },
+              { "label": "Central (CT)",  "value": "America/Chicago" },
+              { "label": "Mountain (MT)", "value": "America/Denver" },
+              { "label": "Pacific (PT)",  "value": "America/Los_Angeles" },
+              { "label": "UTC",           "value": "UTC" }
+            ],
+            "order": 4
+          },
+
+          {
+            "componentType": "heading",
+            "propertyName": "heading_services_setup",
+            "label": "Appointment Services",
+            "size": "h3",
+            "order": 5
+          },
+
+          {
+            "componentType": "paragraph",
+            "propertyName": "para_services",
+            "label": "Define the services customers can book. Each service needs an ID, display label, and duration.",
+            "order": 6
+          },
+
+          {
+            "componentType": "repeater",
+            "propertyName": "setup_services",
+            "label": "Services",
+            "minItems": 1,
+            "addButtonLabel": "+ Add Service",
+            "order": 7,
+            "defaultValue": [
+              { "id": "consultation", "label": "Consultation", "durationMinutes": 30 }
+            ],
+            "components": [
+              {
+                "componentType": "textfield",
+                "propertyName": "id",
+                "label": "Service ID (no spaces)",
+                "placeholder": "consultation",
+                "required": true
+              },
+              {
+                "componentType": "textfield",
+                "propertyName": "label",
+                "label": "Display Name",
+                "placeholder": "Free Consultation",
+                "required": true
+              },
+              {
+                "componentType": "number",
+                "propertyName": "durationMinutes",
+                "label": "Duration (minutes)",
+                "defaultValue": 30,
+                "required": true
+              }
+            ]
+          },
+
+          {
+            "componentType": "heading",
+            "propertyName": "heading_schedule",
+            "label": "Schedule Settings",
+            "size": "h3",
+            "order": 8
+          },
+
+          {
+            "componentType": "checkboxGroup",
+            "propertyName": "setup_available_days",
+            "label": "Available Days",
+            "required": true,
+            "defaultValue": [1,2,3,4,5],
+            "options": [
+              { "label": "Sunday",    "value": 0 },
+              { "label": "Monday",    "value": 1 },
+              { "label": "Tuesday",   "value": 2 },
+              { "label": "Wednesday", "value": 3 },
+              { "label": "Thursday",  "value": 4 },
+              { "label": "Friday",    "value": 5 },
+              { "label": "Saturday",  "value": 6 }
+            ],
+            "order": 9
+          },
+
+          {
+            "componentType": "timePicker",
+            "propertyName": "setup_start_time",
+            "label": "Office Opens",
+            "defaultValue": "09:00",
+            "required": true,
+            "order": 10
+          },
+
+          {
+            "componentType": "timePicker",
+            "propertyName": "setup_end_time",
+            "label": "Office Closes",
+            "defaultValue": "17:00",
+            "required": true,
+            "order": 11
+          },
+
+          {
+            "componentType": "dropdown",
+            "propertyName": "setup_slot_interval",
+            "label": "Slot Interval",
+            "defaultValue": 30,
+            "required": true,
+            "options": [
+              { "label": "15 minutes", "value": 15 },
+              { "label": "30 minutes", "value": 30 },
+              { "label": "60 minutes", "value": 60 }
+            ],
+            "order": 12
+          },
+
+          {
+            "componentType": "heading",
+            "propertyName": "heading_routing",
+            "label": "Email Routing",
+            "size": "h3",
+            "order": 13
+          },
+
+          {
+            "componentType": "paragraph",
+            "propertyName": "para_routing",
+            "label": "AI will classify each contact submission and route it to the appropriate team inbox.",
+            "order": 14
+          },
+
+          {
+            "componentType": "email",
+            "propertyName": "setup_routing_sales",
+            "label": "Sales Inquiries →",
+            "placeholder": "sales@yourcompany.com",
+            "required": true,
+            "order": 15
+          },
+
+          {
+            "componentType": "email",
+            "propertyName": "setup_routing_support",
+            "label": "Support / Complaints →",
+            "placeholder": "support@yourcompany.com",
+            "required": true,
+            "order": 16
+          },
+
+          {
+            "componentType": "email",
+            "propertyName": "setup_routing_billing",
+            "label": "Billing →",
+            "placeholder": "billing@yourcompany.com",
+            "required": true,
+            "order": 17
+          },
+
+          {
+            "componentType": "email",
+            "propertyName": "setup_routing_general",
+            "label": "General / Other →",
+            "placeholder": "info@yourcompany.com",
+            "required": true,
+            "order": 18
+          },
+
+          {
+            "componentType": "heading",
+            "propertyName": "heading_email_brand",
+            "label": "Email Branding",
+            "size": "h3",
+            "order": 19
+          },
+
+          {
+            "componentType": "email",
+            "propertyName": "setup_email_from",
+            "label": "From Email Address",
+            "placeholder": "no-reply@yourcompany.com",
+            "required": true,
+            "order": 20
+          },
+
+          {
+            "componentType": "textfield",
+            "propertyName": "setup_email_from_name",
+            "label": "From Display Name",
+            "placeholder": "Acme Corp",
+            "required": true,
+            "order": 21
+          },
+
+          {
+            "componentType": "plug",
+            "propertyName": "plug_save_config",
+            "label": "Save Configuration",
+            "description": "PATCH /admin/clients/:id — saves all per-client settings to the middleware",
+            "trigger": "manual",
+            "triggeredBy": "btn_save_config",
+            "providers": [
+              {
+                "type": "HTTP",
+                "method": "PATCH",
+                "url": "{{connection.BRIGHTLITE_API_URL}}/admin/clients/{{connection.BRIGHTLITE_CLIENT_ID}}",
+                "headers": {
+                  "Content-Type": "application/json",
+                  "X-Admin-Key":  "{{connection.BRIGHTLITE_ADMIN_KEY}}"
+                },
+                "body": {
+                  "name":                 "{{setup_client_name}}",
+                  "timezone":             "{{setup_timezone}}",
+                  "services":             "{{setup_services}}",
+                  "availableDays":        "{{setup_available_days}}",
+                  "startTime":            "{{setup_start_time}}",
+                  "endTime":              "{{setup_end_time}}",
+                  "slotIntervalMinutes":  "{{setup_slot_interval}}",
+                  "emailFrom":            "{{setup_email_from}}",
+                  "emailFromName":        "{{setup_email_from_name}}",
+                  "routing": {
+                    "sales":   "{{setup_routing_sales}}",
+                    "support": "{{setup_routing_support}}",
+                    "billing": "{{setup_routing_billing}}",
+                    "general": "{{setup_routing_general}}"
+                  }
+                },
+                "onSuccess": {
+                  "showNotification": {
+                    "type": "success",
+                    "message": "Configuration saved! Your Brightlite integration is ready."
+                  }
+                },
+                "onError": {
+                  "showNotification": {
+                    "type": "error",
+                    "message": "Save failed. Check that BRIGHTLITE_ADMIN_KEY is set correctly in Connection Manager."
+                  }
+                }
+              }
+            ],
+            "order": 22
+          },
+
+          {
+            "componentType": "button",
+            "propertyName": "btn_save_config",
+            "label": "Save Configuration",
+            "style": "primary",
+            "validatesFields": [
+              "setup_client_name", "setup_timezone", "setup_services",
+              "setup_available_days", "setup_start_time", "setup_end_time",
+              "setup_routing_sales", "setup_routing_support",
+              "setup_routing_billing", "setup_routing_general",
+              "setup_email_from", "setup_email_from_name"
+            ],
+            "triggers": "plug_save_config",
+            "order": 23
+          }
+
+        ]
+      },
+
+      {
+        "_id": "mod-contact-admin",
+        "name": "Admin — Submission Dashboard",
+        "tag": "contact-admin",
+        "description": "Internal-only module. Lists all contact submissions with filter controls. Supports status updates and note-taking. Protect this module with Unqork role-based access (internal staff only).",
+        "accessControl": {
+          "roles": ["admin", "staff"]
+        },
+
+        "components": [
+
+          {
+            "componentType": "heading",
+            "propertyName": "heading_admin",
+            "label": "Contact Submissions",
+            "size": "h2",
+            "order": 1
+          },
+
+          {
+            "componentType": "dropdown",
+            "propertyName": "filter_status",
+            "label": "Filter by Status",
+            "defaultValue": "",
+            "options": [
+              { "label": "All", "value": "" },
+              { "label": "New", "value": "new" },
+              { "label": "In Progress", "value": "in_progress" },
+              { "label": "Resolved", "value": "resolved" }
+            ],
+            "order": 2
+          },
+
+          {
+            "componentType": "dropdown",
+            "propertyName": "filter_category",
+            "label": "Filter by Category",
+            "defaultValue": "",
+            "options": [
+              { "label": "All", "value": "" },
+              { "label": "Sales", "value": "sales" },
+              { "label": "Support", "value": "support" },
+              { "label": "Billing", "value": "billing" },
+              { "label": "Complaint", "value": "complaint" },
+              { "label": "General", "value": "general" },
+              { "label": "Other", "value": "other" }
+            ],
+            "order": 3
+          },
+
+          {
+            "componentType": "plug",
+            "propertyName": "plug_load_submissions",
+            "label": "Load Submissions",
+            "trigger": "onLoad",
+            "watchFields": ["filter_status", "filter_category"],
+            "providers": [
+              {
+                "type": "HTTP",
+                "method": "GET",
+                "url": "{{connection.BRIGHTLITE_API_URL}}/contact/submissions",
+                "headers": {
+                  "X-Client-ID": "{{connection.BRIGHTLITE_CLIENT_ID}}",
+                  "X-API-Key":   "{{connection.BRIGHTLITE_API_KEY}}"
+                },
+                "queryParams": {
+                  "status": "{{filter_status}}",
+                  "category": "{{filter_category}}"
+                },
+                "onSuccess": {
+                  "mapOutputs": [
+                    { "source": "response.data", "target": "submissions_grid" },
+                    { "source": "response.total", "target": "total_count" }
+                  ]
+                }
+              }
+            ],
+            "order": 4
+          },
+
+          {
+            "componentType": "hidden",
+            "propertyName": "total_count",
+            "label": "Total submissions count",
+            "order": 5
+          },
+
+          {
+            "componentType": "output",
+            "propertyName": "output_total",
+            "label": "Showing {{total_count}} submission(s)",
+            "order": 6
+          },
+
+          {
+            "componentType": "grid",
+            "propertyName": "submissions_grid",
+            "label": "Submissions",
+            "dataSource": "submissions_grid",
+            "columns": [
+              { "field": "id",          "header": "Ref ID",      "width": "100px", "truncate": true },
+              { "field": "name",        "header": "Name",        "width": "160px" },
+              { "field": "email",       "header": "Email",       "width": "200px" },
+              { "field": "category",    "header": "Category",    "width": "110px", "badge": true },
+              { "field": "sentiment",   "header": "Sentiment",   "width": "110px", "badge": true },
+              { "field": "spamScore",   "header": "Spam",        "width": "70px",  "type": "percent" },
+              { "field": "status",      "header": "Status",      "width": "110px", "badge": true, "editable": true,
+                "editOptions": ["new", "in_progress", "resolved"] },
+              { "field": "submittedAt", "header": "Submitted",   "width": "160px", "type": "datetime" }
+            ],
+            "rowActions": [
+              {
+                "label": "View",
+                "type": "expand",
+                "expandComponent": "panel_submission_detail"
+              },
+              {
+                "label": "Update Status",
+                "type": "trigger",
+                "triggers": "plug_update_submission"
+              }
+            ],
+            "order": 7
+          },
+
+          {
+            "componentType": "hidden",
+            "propertyName": "selected_submission_id",
+            "label": "Selected submission ID for update",
+            "order": 8
+          },
+
+          {
+            "componentType": "hidden",
+            "propertyName": "update_status",
+            "label": "New status value",
+            "order": 9
+          },
+
+          {
+            "componentType": "textarea",
+            "propertyName": "internal_notes",
+            "label": "Internal Notes",
+            "placeholder": "Add notes visible only to staff...",
+            "order": 10
+          },
+
+          {
+            "componentType": "plug",
+            "propertyName": "plug_update_submission",
+            "label": "Update Submission",
+            "description": "PATCH /contact/submissions/:id",
+            "trigger": "manual",
+            "triggeredBy": "btn_update_submission",
+            "providers": [
+              {
+                "type": "HTTP",
+                "method": "PATCH",
+                "url": "{{connection.BRIGHTLITE_API_URL}}/contact/submissions/{{selected_submission_id}}",
+                "headers": {
+                  "Content-Type": "application/json",
+                  "X-Client-ID":  "{{connection.BRIGHTLITE_CLIENT_ID}}",
+                  "X-API-Key":    "{{connection.BRIGHTLITE_API_KEY}}"
+                },
+                "body": {
+                  "status": "{{update_status}}",
+                  "internalNotes": "{{internal_notes}}"
+                },
+                "onSuccess": {
+                  "showNotification": {
+                    "type": "success",
+                    "message": "Submission updated."
+                  },
+                  "trigger": "plug_load_submissions"
+                }
+              }
+            ],
+            "order": 11
+          },
+
+          {
+            "componentType": "button",
+            "propertyName": "btn_update_submission",
+            "label": "Save Changes",
+            "style": "primary",
+            "triggers": "plug_update_submission",
+            "order": 12
+          },
+
+          {
+            "componentType": "button",
+            "propertyName": "btn_refresh",
+            "label": "Refresh",
+            "style": "secondary",
+            "triggers": "plug_load_submissions",
+            "order": 13
+          }
+
+        ]
+      }
+
+    ]
+  }
+}

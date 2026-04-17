@@ -1,0 +1,56 @@
+# docker-compose.yml
+# Local development stack — no database needed (uses memory adapter by default)
+# For production, uncomment the postgres service and update .env accordingly
+
+version: '3.9'
+
+services:
+  middleware:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: brightlite-middleware
+    ports:
+      - '3000:3000'
+    environment:
+      NODE_ENV: development
+      LOG_LEVEL: info
+      DB_ADAPTER: memory
+      AI_PROVIDER: ${AI_PROVIDER:-anthropic}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_FROM_NUMBER: ${TWILIO_FROM_NUMBER:-}
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-sendgrid}
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-no-reply@example.com}
+      EMAIL_FROM_NAME: ${EMAIL_FROM_NAME:-Brightlite}
+      CLIENT_NAME: ${CLIENT_NAME:-Demo Client}
+      CLIENT_TIMEZONE: ${CLIENT_TIMEZONE:-America/Chicago}
+    volumes:
+      - ./src:/app/src   # Hot reload in dev (use tsx watch)
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://localhost:3000/health']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ── Optional: PostgreSQL for production-like local testing ─────────────────
+  # Uncomment below and set DB_ADAPTER=postgres in .env
+  #
+  # postgres:
+  #   image: postgres:16-alpine
+  #   container_name: brightlite-postgres
+  #   environment:
+  #     POSTGRES_DB: brightlite
+  #     POSTGRES_USER: brightlite
+  #     POSTGRES_PASSWORD: brightlite
+  #   ports:
+  #     - '5432:5432'
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+
+# volumes:
+#   postgres_data:

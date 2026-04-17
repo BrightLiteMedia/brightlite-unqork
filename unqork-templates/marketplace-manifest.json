@@ -1,0 +1,171 @@
+{
+  "_comment": "Unqork Marketplace Package Manifest — Brightlite AI Intake & Scheduling",
+  "_version": "2.0.0",
+  "_spec": "unqork-marketplace-manifest/v1",
+
+  "id":          "brightlite-ai-middleware",
+  "name":        "Brightlite AI Intake & Scheduling",
+  "publisher":   "Brightlite Media Corporation",
+  "publisherUrl": "https://brightlite.cloud",
+  "version":     "2.0.0",
+  "category":    ["CRM", "AI", "Scheduling", "Communications"],
+  "tags":        ["otp", "appointments", "contact-form", "ai-classification", "no-show-risk"],
+
+  "description": "Drop-in AI-powered intake and appointment scheduling for Unqork. Adds OTP-verified contact forms with AI classification, sentiment scoring, and auto-routing — plus full appointment scheduling with real-time availability, natural-language booking, and AI no-show risk scoring. Confirmation emails and SMS are sent automatically.",
+
+  "longDescription": "Brightlite Middleware is a headless REST API that gives your Unqork application a complete AI-powered back-end for two high-value workflows: (1) verified contact/intake forms with AI triage and team routing, and (2) appointment booking with smart scheduling, OTP identity verification, and no-show risk scoring. The middleware is deployed independently of your Unqork instance — Brightlite hosts a shared instance, or you can self-host in your own cloud.",
+
+  "screenshots": [
+    { "label": "Contact Flow — OTP Verification Step",    "url": "https://brightlite.cloud/marketplace/screenshots/contact-otp.png" },
+    { "label": "Appointment Scheduler — Date Picker",     "url": "https://brightlite.cloud/marketplace/screenshots/appt-picker.png" },
+    { "label": "Admin Dashboard — Submission Grid",       "url": "https://brightlite.cloud/marketplace/screenshots/admin-grid.png" }
+  ],
+
+  "requiredPlan": "business",
+
+  "apps": [
+    {
+      "id":          "contact-intake",
+      "name":        "Contact & Intake",
+      "description": "OTP-verified contact form with AI classification, spam detection, sentiment scoring, and automatic team routing.",
+      "file":        "contact-intake-app.json",
+      "entryModule": "mod-contact-step1",
+      "adminModule": "mod-contact-admin",
+      "setupModule": "mod-setup-wizard"
+    },
+    {
+      "id":          "appointment-scheduler",
+      "name":        "Appointment Scheduler",
+      "description": "Full appointment booking with service selection, real-time availability, natural-language smart scheduling, and AI no-show risk scoring.",
+      "file":        "appointment-scheduler-app.json",
+      "entryModule": "mod-appt-step1",
+      "adminModule": "mod-appt-admin"
+    }
+  ],
+
+  "connections": [
+    {
+      "key":         "BRIGHTLITE_API_URL",
+      "label":       "Brightlite API URL",
+      "type":        "url",
+      "required":    true,
+      "defaultValue": "https://api.brightlite.cloud",
+      "helpText":    "Base URL of your Brightlite middleware instance. Use the default for Brightlite-hosted, or enter your own URL for self-hosted deployments.",
+      "placeholder": "https://api.brightlite.cloud"
+    },
+    {
+      "key":         "BRIGHTLITE_CLIENT_ID",
+      "label":       "Client ID",
+      "type":        "string",
+      "required":    true,
+      "helpText":    "Your unique client identifier — provided by Brightlite after account activation. Format: UUID.",
+      "placeholder": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+    },
+    {
+      "key":         "BRIGHTLITE_API_KEY",
+      "label":       "API Key",
+      "type":        "secret",
+      "required":    true,
+      "helpText":    "Your secret API key — provided by Brightlite after account activation. Format: blt_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "placeholder": "blt_live_..."
+    },
+    {
+      "key":         "BRIGHTLITE_ADMIN_KEY",
+      "label":       "Admin Key (Setup Only)",
+      "type":        "secret",
+      "required":    false,
+      "helpText":    "Only needed to run the Setup Wizard. This is a Brightlite-issued admin key — not required for day-to-day operations. Remove after completing setup.",
+      "placeholder": ""
+    }
+  ],
+
+  "installWizard": {
+    "steps": [
+      {
+        "step": 1,
+        "title": "Connect to Brightlite",
+        "description": "Enter the connection credentials provided by Brightlite. If you don't have an account, visit brightlite.cloud to get started.",
+        "fields": ["BRIGHTLITE_API_URL", "BRIGHTLITE_CLIENT_ID", "BRIGHTLITE_API_KEY"],
+        "validationEndpoint": {
+          "method": "GET",
+          "url": "{{BRIGHTLITE_API_URL}}/health",
+          "headers": { "X-Client-ID": "{{BRIGHTLITE_CLIENT_ID}}", "X-API-Key": "{{BRIGHTLITE_API_KEY}}" },
+          "successCondition": "response.status == 'ok'",
+          "errorMessage": "Could not connect to the Brightlite API. Check your credentials and try again."
+        }
+      },
+      {
+        "step": 2,
+        "title": "Choose Applications",
+        "description": "Select which Brightlite applications to install in your environment.",
+        "fields": [],
+        "appSelection": {
+          "apps": ["contact-intake", "appointment-scheduler"],
+          "allowPartial": true
+        }
+      },
+      {
+        "step": 3,
+        "title": "Configure Your Setup",
+        "description": "Optional: Enter the Admin Key to run the in-app Setup Wizard and configure your services and routing without leaving Unqork.",
+        "fields": ["BRIGHTLITE_ADMIN_KEY"],
+        "optional": true
+      },
+      {
+        "step": 4,
+        "title": "Complete",
+        "description": "Your Brightlite applications are installed. Open the Setup Wizard module to configure your services, schedule, and routing.",
+        "postInstallActions": [
+          {
+            "label": "Open Setup Wizard →",
+            "type": "openModule",
+            "appId": "contact-intake",
+            "moduleId": "mod-setup-wizard"
+          },
+          {
+            "label": "Go to Contact Form",
+            "type": "openModule",
+            "appId": "contact-intake",
+            "moduleId": "mod-contact-step1"
+          },
+          {
+            "label": "Go to Appointment Scheduler",
+            "type": "openModule",
+            "appId": "appointment-scheduler",
+            "moduleId": "mod-appt-step1"
+          }
+        ]
+      }
+    ]
+  },
+
+  "deploymentModels": {
+    "brightliteHosted": {
+      "label": "Brightlite Hosted (Recommended)",
+      "description": "Brightlite runs and maintains the API. Zero infrastructure required. Get your Client ID and API key from brightlite.cloud.",
+      "apiUrl": "https://api.brightlite.cloud"
+    },
+    "selfHosted": {
+      "label": "Self-Hosted",
+      "description": "Deploy the Brightlite Docker image in your own cloud (AWS, Azure, GCP, OCI, or on-prem). Set MULTI_TENANT=false and use your server's URL.",
+      "dockerImage": "brightlitemedia/middleware:latest",
+      "docs": "https://github.com/brightlitemedia/brightlite-unqork#deployment"
+    }
+  },
+
+  "support": {
+    "documentation": "https://brightlite.cloud/docs",
+    "email":         "support@brightlite.cloud",
+    "slack":         "https://brightlite.cloud/community"
+  },
+
+  "pricing": {
+    "model": "per-client",
+    "tiers": [
+      { "name": "Starter", "price": "$99/mo",  "included": "Up to 500 contact submissions + 200 appointments/mo" },
+      { "name": "Growth",  "price": "$299/mo",  "included": "Unlimited submissions + appointments, priority support" },
+      { "name": "Custom",  "price": "Contact us", "included": "White-label, dedicated infrastructure, SLA" }
+    ],
+    "trialDays": 14
+  }
+}

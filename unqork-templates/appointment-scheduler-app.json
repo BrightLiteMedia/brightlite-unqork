@@ -1,0 +1,1182 @@
+{
+  "_comment": "Brightlite Middleware — Appointment Scheduler Application Template",
+  "_version": "2.0.0",
+  "_middlewareBase": "{{connection.BRIGHTLITE_API_URL}}",
+  "_authHeaders": "Every plug sends X-Client-ID and X-API-Key from Unqork Connection Manager",
+
+  "app": {
+    "_id": "bl-appt-app-001",
+    "name": "Brightlite Appointment Scheduler",
+    "tag": "brightlite-appointments",
+    "description": "5-module appointment booking flow: OTP identity verification → service selection → AI-assisted date/time picking → booking confirmation → admin dashboard.",
+    "entryModule": "mod-appt-step1",
+    "version": "1.0.0",
+    "status": "active",
+
+    "globalVariables": {
+      "MIDDLEWARE_BASE_URL": "{{connection.BRIGHTLITE_API_URL}}",
+      "OTP_TOKEN_ID": "",
+      "SELECTED_SERVICE_ID": "",
+      "SELECTED_DATE": "",
+      "SELECTED_TIME": "",
+      "APPOINTMENT_ID": "",
+      "CONFIRMATION_CODE": ""
+    },
+
+    "modules": [
+
+      {
+        "_id": "mod-appt-step1",
+        "name": "Identity & Verification",
+        "tag": "appt-step-1",
+        "description": "Collects name, email, phone and OTP-verifies identity before allowing access to scheduling.",
+
+        "components": [
+
+          {
+            "componentType": "heading",
+            "propertyName": "heading_intro",
+            "label": "Book an Appointment",
+            "size": "h2",
+            "order": 1
+          },
+
+          {
+            "componentType": "paragraph",
+            "propertyName": "para_intro",
+            "label": "Enter your details to get started. We'll send a verification code to confirm your identity.",
+            "order": 2
+          },
+
+          {
+            "componentType": "textfield",
+            "propertyName": "name",
+            "label": "Full Name",
+            "placeholder": "Jane Smith",
+            "required": true,
+            "order": 3
+          },
+
+          {
+            "componentType": "email",
+            "propertyName": "email",
+            "label": "Email Address",
+            "placeholder": "jane@example.com",
+            "required": true,
+            "order": 4
+          },
+
+          {
+            "componentType": "phoneNumber",
+            "propertyName": "phone",
+            "label": "Mobile Phone",
+            "required": false,
+            "helpText": "Recommended — needed for SMS confirmations and reminders.",
+            "order": 5
+          },
+
+          {
+            "componentType": "dropdown",
+            "propertyName": "otp_channel",
+            "label": "Send code via",
+            "required": true,
+            "defaultValue": "email",
+            "options": [
+              { "label": "Email", "value": "email" },
+              { "label": "SMS", "value": "sms" }
+            ],
+            "order": 6
+          },
+
+          {
+            "componentType": "hidden",
+            "propertyName": "otp_destination",
+            "label": "Resolved OTP destination",
+            "order": 7
+          },
+
+          {
+            "componentType": "hidden",
+            "propertyName": "otp_token_id",
+            "label": "Token ID returned by /otp/send",
+            "order": 8
+          },
+
+          {
+            "componentType": "initializer",
+            "propertyName": "init_resolve_destination",
+            "trigger": "onChange",
+            "watchFields": ["otp_channel", "email", "phone"],
+            "actions": [
+              {
+                "type": "setField",
+                "target": "otp_destination",
+                "formula": "otp_channel == 'sms' ? phone : email"
+              }
+            ],
+            "order": 9
+          },
+
+          {
+            "componentType": "plug",
+            "propertyName": "plug_send_otp",
+            "label": "Send Verification Code",
+            "description": "POST /otp/send",
+            "trigger": "manual",
+            "triggeredBy": "btn_send_code",
+            "providers": [
+              {
+                "type": "HTTP",
+                "method": "POST",
+                "url": "{{connection.BRIGHTLITE_API_URL}}/otp/send",
+                "headers": { "Content-Type": "application/json",
+                    "X-Client-ID":  "{{connection.BRIGHTLITE_CLIENT_ID}}",
+                    "X-API-Key":    "{{connection.BRIGHTLITE_API_KEY}}" },
+                "body": {
+                  "channel": "{{otp_channel}}",
+                  "destination": "{{otp_destination}}"
+                },
+                "onSuccess": {
+                  "mapOutputs": [
+                    { "source": "response.tokenId",   "target": "otp_token_id" },
+                    { "source": "response.expiresAt",  "target": "otp_expires_at" }
+                  ],
+                  "showNotification": {
+                    "type": "success",
+                    "message": "Code sent to {{otp_destination}}"
+                  },
+                  "actions": [
+                    { "type": "show", "target": "section_otp_entry" },
+                    { "type": "hide", "target": "btn_send_code" }
+                  ]
+                },
+                "onError": {
+                  "showNotification": { "type": "error", "message": "Failed to send code. Please check your details." }
+                }
+              }
+            ],
+            "order": 10
+          },
+
+          {
+            "componentType": "button",
+            "propertyName": "btn_send_code",
+            "label": "Send Verification Code",
+            "style": "primary",
+            "validatesFields": ["name", "email", "otp_channel"],
+            "triggers": "plug_send_otp",
+            "order": 11
+          },
+
+          {
+            "componentType": "hidden",
+            "propertyName": "otp_expires_at",
+            "label": "OTP expiry timestamp",
+            "order": 12
+          },
+
+          {
+            "componentType": "section",
+            "propertyName": "section_otp_entry",
+            "label": "Verify Your Code",
+            "hidden": true,
+            "order": 13,
+            "components": [
+
+              {
+                "componentType": "paragraph",
+                "propertyName": "para_otp_hint",
+                "label": "Enter the 6-digit code we sent to <strong>{{otp_destination}}</strong>.",
+                "order": 1
+              },
+
+              {
+                "componentType": "textfield",
+                "propertyName": "otp_code",
+                "label": "Verification Code",
+                "placeholder": "123456",
+                "required": true,
+                "inputType": "number",
+                "maxLength": 6,
+                "minLength": 6,
+                "order": 2
+              },
+
+              {
+                "componentType": "plug",
+                "propertyName": "plug_verify_otp",
+                "label": "Verify Code",
+                "description": "POST /otp/verify",
+                "trigger": "manual",
+                "triggeredBy": "btn_verify_code",
+                "providers": [
+                  {
+                    "type": "HTTP",
+                    "method": "POST",
+                    "url": "{{connection.BRIGHTLITE_API_URL}}/otp/verify",
+                    "headers": { "Content-Type": "application/json",
+                    "X-Client-ID":  "{{connection.BRIGHTLITE_CLIENT_ID}}",
+                    "X-API-Key":    "{{connection.BRIGHTLITE_API_KEY}}" },
+                    "body": {
+                      "tokenId": "{{otp_token_id}}",
+                      "code": "{{otp_code}}"
+                    },
+                    "onSuccess": {
+                      "conditions": [
+                        {
+                          "when": "response.valid == true",
+                          "actions": [
+                            {
+                              "type": "navigate",
+                              "target": "mod-appt-step2",
+                              "passFields": ["name", "email", "phone", "otp_token_id"]
+                            }
+                          ]
+                        },
+                        {
+                          "when": "response.valid == false",
+                          "actions": [
+                            { "type": "showNotification", "config": { "type": "error", "message": "Incorrect code. Please try again." } },
+                            { "type": "clearField", "target": "otp_code" }
+                          ]
+                        }
+                      ]
+                    },
+                    "onError": {
+                      "showNotification": { "type": "error", "message": "Verification error. Request a new code." }
+                    }
+                  }
+                ],
+                "order": 3
+              },
+
+              {
+                "componentType": "button",
+                "propertyName": "btn_verify_code",
+                "label": "Verify & Continue",
+                "style": "primary",
+                "validatesFields": ["otp_code"],
+                "triggers": "plug_verify_otp",
+                "order": 4
+              }
+
+            ]
+          }
+
+        ]
+      },
+
+      {
+        "_id": "mod-appt-step2",
+        "name": "Select a Service",
+        "tag": "appt-step-2",
+        "description": "Fetches the configured services list from the middleware and lets the user pick one.",
+
+        "components": [
+
+          {
+            "componentType": "hidden",
+            "propertyName": "name",
+            "order": 1
+          },
+          {
+            "componentType": "hidden",
+            "propertyName": "email",
+            "order": 2
+          },
+          {
+            "componentType": "hidden",
+            "propertyName": "phone",
+            "order": 3
+          },
+          {
+            "componentType": "hidden",
+            "propertyName": "otp_token_id",
+            "order": 4
+          },
+
+          {
+            "componentType": "heading",
+            "propertyName": "heading_services",
+            "label": "Select a Service",
+            "size": "h2",
+            "order": 5
+          },
+
+          {
+            "componentType": "hidden",
+            "propertyName": "services_list",
+            "label": "Services JSON from API",
+            "order": 6
+          },
+
+          {
+            "componentType": "plug",
+            "propertyName": "plug_get_services",
+            "label": "Load Services",
+            "description": "GET /appointments/services — loads on module open",
+            "trigger": "onLoad",
+            "providers": [
+              {
+                "type": "HTTP",
+                "method": "GET",
+                "url": "{{connection.BRIGHTLITE_API_URL}}/appointments/services",
+                "headers": {
+                  "X-Client-ID": "{{connection.BRIGHTLITE_CLIENT_ID}}",
+                  "X-API-Key":   "{{connection.BRIGHTLITE_API_KEY}}"
+                },
+                "onSuccess": {
+                  "mapOutputs": [
+                    { "source": "response.services", "target": "services_list" }
+                  ],
+                  "actions": [
+                    {
+                      "type": "populateOptions",
+                      "target": "service_picker",
+                      "source": "services_list",
+                      "labelField": "label",
+                      "valueField": "id",
+                      "descriptionField": "durationMinutes",
+                      "descriptionFormat": "{{durationMinutes}} min"
+                    }
+                  ]
+                },
+                "onError": {
+                  "showNotification": { "type": "error", "message": "Could not load services. Please refresh." }
+                }
+              }
+            ],
+            "order": 7
+          },
+
+          {
+            "componentType": "radioGroup",
+            "propertyName": "service_picker",
+            "label": "Choose a service",
+            "required": true,
+            "style": "card",
+            "options": [],
+            "order": 8
+          },
+
+          {
+            "componentType": "hidden",
+            "propertyName": "selected_service_label",
+            "label": "Selected service label (for display)",
+            "order": 9
+          },
+
+          {
+            "componentType": "hidden",
+            "propertyName": "selected_service_duration",
+            "label": "Selected service duration in minutes",
+            "order": 10
+          },
+
+          {
+            "componentType": "initializer",
+            "propertyName": "init_capture_service",
+            "trigger": "onChange",
+            "watchFields": ["service_picker"],
+            "actions": [
+              {
+                "type": "lookupFromList",
+                "list": "services_list",
+                "matchField": "id",
+                "matchValue": "{{service_picker}}",
+                "outputs": [
+                  { "source": "label",            "target": "selected_service_label" },
+                  { "source": "durationMinutes",  "target": "selected_service_duration" }
+                ]
+              }
+            ],
+            "order": 11
+          },
+
+          {
+            "componentType": "button",
+            "propertyName": "btn_continue_dates",
+            "label": "Continue →",
+            "style": "primary",
+            "validatesFields": ["service_picker"],
+            "navigateTo": "mod-appt-step3",
+            "passFields": ["name", "email", "phone", "otp_token_id", "service_picker", "selected_service_label", "selected_service_duration"],
+            "order": 12
+          },
+
+          {
+            "componentType": "button",
+            "propertyName": "btn_back_step1",
+            "label": "← Back",
+            "style": "secondary",
+            "navigateTo": "mod-appt-step1",
+            "order": 13
+          }
+
+        ]
+      },
+
+      {
+        "_id": "mod-appt-step3",
+        "name": "Pick a Date & Time",
+        "tag": "appt-step-3",
+        "description": "Loads available dates, then slots for the selected date. Optionally supports natural-language scheduling via POST /appointments/smart-schedule.",
+
+        "components": [
+
+          {
+            "componentType": "hidden", "propertyName": "name",                    "order": 1
+          },
+          {
+            "componentType": "hidden", "propertyName": "email",                   "order": 2
+          },
+          {
+            "componentType": "hidden", "propertyName": "phone",                   "order": 3
+          },
+          {
+            "componentType": "hidden", "propertyName": "otp_token_id",            "order": 4
+          },
+          {
+            "componentType": "hidden", "propertyName": "service_picker",          "order": 5
+          },
+          {
+            "componentType": "hidden", "propertyName": "selected_service_label",  "order": 6
+          },
+          {
+            "componentType": "hidden", "propertyName": "selected_service_duration","order": 7
+          },
+
+          {
+            "componentType": "heading",
+            "propertyName": "heading_datetime",
+            "label": "Choose a Date & Time",
+            "size": "h2",
+            "order": 8
+          },
+
+          {
+            "componentType": "output",
+            "propertyName": "output_service_summary",
+            "label": "Booking: <strong>{{selected_service_label}}</strong> ({{selected_service_duration}} min)",
+            "style": "info-banner",
+            "order": 9
+          },
+
+          {
+            "componentType": "hidden",
+            "propertyName": "available_dates_list",
+            "label": "Available dates from API",
+            "order": 10
+          },
+
+          {
+            "componentType": "plug",
+            "propertyName": "plug_get_available_dates",
+            "label": "Load Available Dates",
+            "description": "GET /appointments/available-dates",
+            "trigger": "onLoad",
+            "providers": [
+              {
+                "type": "HTTP",
+                "method": "GET",
+                "url": "{{connection.BRIGHTLITE_API_URL}}/appointments/available-dates",
+                "headers": {
+                  "X-Client-ID": "{{connection.BRIGHTLITE_CLIENT_ID}}",
+                  "X-API-Key":   "{{connection.BRIGHTLITE_API_KEY}}"
+                },
+                "onSuccess": {
+                  "mapOutputs": [
+                    { "source": "response.dates", "target": "available_dates_list" }
+                  ],
+                  "actions": [
+                    {
+                      "type": "populateOptions",
+                      "target": "date_picker",
+                      "source": "available_dates_list",
+                      "labelField": "displayLabel",
+                      "valueField": "date"
+                    }
+                  ]
+                }
+              }
+            ],
+            "order": 11
+          },
+
+          {
+            "componentType": "dropdown",
+            "propertyName": "date_picker",
+            "label": "Select Date",
+            "required": true,
+            "placeholder": "— pick a date —",
+            "options": [],
+            "order": 12
+          },
+
+          {
+            "componentType": "hidden",
+            "propertyName": "slots_list",
+            "label": "Slots JSON from API",
+            "order": 13
+          },
+
+          {
+            "componentType": "plug",
+            "propertyName": "plug_get_slots",
+            "label": "Load Time Slots for Selected Date",
+            "description": "GET /appointments/slots?date=&serviceId=",
+            "trigger": "onChange",
+            "watchFields": ["date_picker"],
+            "providers": [
+              {
+                "type": "HTTP",
+                "method": "GET",
+                "url": "{{connection.BRIGHTLITE_API_URL}}/appointments/slots",
+                "headers": {
+                  "X-Client-ID": "{{connection.BRIGHTLITE_CLIENT_ID}}",
+                  "X-API-Key":   "{{connection.BRIGHTLITE_API_KEY}}"
+                },
+                "queryParams": {
+                  "date":      "{{date_picker}}",
+                  "serviceId": "{{service_picker}}"
+                },
+                "onSuccess": {
+                  "mapOutputs": [
+                    { "source": "response.slots", "target": "slots_list" }
+                  ],
+                  "actions": [
+                    {
+                      "type": "populateOptions",
+                      "target": "time_picker",
+                      "source": "slots_list",
+                      "filter": "available == true",
+                      "labelField": "time",
+                      "valueField": "time"
+                    },
+                    { "type": "show", "target": "section_time_selection" }
+                  ]
+                }
+              }
+            ],
+            "order": 14
+          },
+
+          {
+            "componentType": "section",
+            "propertyName": "section_smart_schedule",
+            "label": "Or describe when you'd like to meet",
+            "collapsible": true,
+            "defaultState": "collapsed",
+            "order": 15,
+            "components": [
+
+              {
+                "componentType": "paragraph",
+                "propertyName": "para_smart",
+                "label": "Type something like <em>\"next Tuesday afternoon\"</em> or <em>\"any morning this week\"</em> and we'll find the best slots.",
+                "order": 1
+              },
+
+              {
+                "componentType": "textfield",
+                "propertyName": "smart_schedule_input",
+                "label": "When would you like to meet?",
+                "placeholder": "e.g. next Tuesday afternoon",
+                "order": 2
+              },
+
+              {
+                "componentType": "hidden",
+                "propertyName": "smart_suggestions",
+                "label": "AI suggested slots",
+                "order": 3
+              },
+
+              {
+                "componentType": "plug",
+                "propertyName": "plug_smart_schedule",
+                "label": "Find Matching Slots",
+                "description": "POST /appointments/smart-schedule — AI parses natural language and returns suggestions",
+                "trigger": "manual",
+                "triggeredBy": "btn_smart_search",
+                "providers": [
+                  {
+                    "type": "HTTP",
+                    "method": "POST",
+                    "url": "{{connection.BRIGHTLITE_API_URL}}/appointments/smart-schedule",
+                    "headers": { "Content-Type": "application/json",
+                    "X-Client-ID":  "{{connection.BRIGHTLITE_CLIENT_ID}}",
+                    "X-API-Key":    "{{connection.BRIGHTLITE_API_KEY}}" },
+                    "body": {
+                      "naturalLanguageInput": "{{smart_schedule_input}}",
+                      "serviceId": "{{service_picker}}",
+                      "timezone": "{{browser_timezone}}"
+                    },
+                    "onSuccess": {
+                      "mapOutputs": [
+                        { "source": "response.suggestions", "target": "smart_suggestions" }
+                      ],
+                      "actions": [
+                        {
+                          "type": "populateOptions",
+                          "target": "smart_suggestion_picker",
+                          "source": "smart_suggestions",
+                          "labelField": "displayLabel",
+                          "valueField": "slot"
+                        },
+                        { "type": "show", "target": "smart_suggestion_picker" }
+                      ]
+                    }
+                  }
+                ],
+                "order": 4
+              },
+
+              {
+                "componentType": "button",
+                "propertyName": "btn_smart_search",
+                "label": "Find Slots",
+                "style": "secondary",
+                "triggers": "plug_smart_schedule",
+                "order": 5
+              },
+
+              {
+                "componentType": "radioGroup",
+                "propertyName": "smart_suggestion_picker",
+                "label": "Suggested slots",
+                "hidden": true,
+                "style": "card",
+                "options": [],
+                "order": 6
+              },
+
+              {
+                "componentType": "initializer",
+                "propertyName": "init_apply_smart_slot",
+                "trigger": "onChange",
+                "watchFields": ["smart_suggestion_picker"],
+                "actions": [
+                  {
+                    "type": "setField",
+                    "target": "date_picker",
+                    "formula": "smart_suggestion_picker.split('T')[0]"
+                  },
+                  {
+                    "type": "setField",
+                    "target": "time_picker",
+                    "formula": "smart_suggestion_picker.split('T')[1]"
+                  }
+                ],
+                "order": 7
+              }
+
+            ]
+          },
+
+          {
+            "componentType": "section",
+            "propertyName": "section_time_selection",
+            "label": "Available Times",
+            "hidden": true,
+            "order": 16,
+            "components": [
+
+              {
+                "componentType": "radioGroup",
+                "propertyName": "time_picker",
+                "label": "Select a time",
+                "required": true,
+                "style": "pill",
+                "options": [],
+                "order": 1
+              }
+
+            ]
+          },
+
+          {
+            "componentType": "hidden",
+            "propertyName": "browser_timezone",
+            "label": "Browser timezone (populated by initializer)",
+            "order": 17
+          },
+
+          {
+            "componentType": "initializer",
+            "propertyName": "init_capture_timezone",
+            "trigger": "onLoad",
+            "actions": [
+              {
+                "type": "setBrowserValue",
+                "target": "browser_timezone",
+                "browserValue": "timezone"
+              }
+            ],
+            "order": 18
+          },
+
+          {
+            "componentType": "button",
+            "propertyName": "btn_continue_confirm",
+            "label": "Review & Confirm →",
+            "style": "primary",
+            "validatesFields": ["date_picker", "time_picker"],
+            "navigateTo": "mod-appt-step4",
+            "passFields": ["name", "email", "phone", "otp_token_id", "service_picker", "selected_service_label", "selected_service_duration", "date_picker", "time_picker", "browser_timezone"],
+            "order": 19
+          },
+
+          {
+            "componentType": "button",
+            "propertyName": "btn_back_step2",
+            "label": "← Back",
+            "style": "secondary",
+            "navigateTo": "mod-appt-step2",
+            "order": 20
+          }
+
+        ]
+      },
+
+      {
+        "_id": "mod-appt-step4",
+        "name": "Review & Book",
+        "tag": "appt-step-4",
+        "description": "Summary review screen. User can add notes and confirm. POST /appointments/book fires here; AI no-show scoring runs server-side.",
+
+        "components": [
+
+          {
+            "componentType": "hidden", "propertyName": "name",                     "order": 1
+          },
+          {
+            "componentType": "hidden", "propertyName": "email",                    "order": 2
+          },
+          {
+            "componentType": "hidden", "propertyName": "phone",                    "order": 3
+          },
+          {
+            "componentType": "hidden", "propertyName": "otp_token_id",             "order": 4
+          },
+          {
+            "componentType": "hidden", "propertyName": "service_picker",           "order": 5
+          },
+          {
+            "componentType": "hidden", "propertyName": "selected_service_label",   "order": 6
+          },
+          {
+            "componentType": "hidden", "propertyName": "selected_service_duration","order": 7
+          },
+          {
+            "componentType": "hidden", "propertyName": "date_picker",              "order": 8
+          },
+          {
+            "componentType": "hidden", "propertyName": "time_picker",              "order": 9
+          },
+          {
+            "componentType": "hidden", "propertyName": "browser_timezone",         "order": 10
+          },
+
+          {
+            "componentType": "heading",
+            "propertyName": "heading_review",
+            "label": "Review Your Appointment",
+            "size": "h2",
+            "order": 11
+          },
+
+          {
+            "componentType": "output",
+            "propertyName": "output_review_card",
+            "label": "<table style='width:100%; border-collapse:collapse; font-size:15px;'><tr><td style='padding:8px 0; color:#666;'>Name</td><td><strong>{{name}}</strong></td></tr><tr><td style='padding:8px 0; color:#666;'>Email</td><td>{{email}}</td></tr><tr><td style='padding:8px 0; color:#666;'>Service</td><td><strong>{{selected_service_label}}</strong> ({{selected_service_duration}} min)</td></tr><tr><td style='padding:8px 0; color:#666;'>Date</td><td><strong>{{date_picker}}</strong></td></tr><tr><td style='padding:8px 0; color:#666;'>Time</td><td><strong>{{time_picker}}</strong> ({{browser_timezone}})</td></tr></table>",
+            "style": "card",
+            "order": 12
+          },
+
+          {
+            "componentType": "textarea",
+            "propertyName": "notes",
+            "label": "Additional Notes (optional)",
+            "placeholder": "Anything we should know before your appointment...",
+            "required": false,
+            "order": 13
+          },
+
+          {
+            "componentType": "hidden",
+            "propertyName": "appointment_id",
+            "label": "Appointment ID from API",
+            "order": 14
+          },
+
+          {
+            "componentType": "hidden",
+            "propertyName": "confirmation_code",
+            "label": "Confirmation code from API",
+            "order": 15
+          },
+
+          {
+            "componentType": "hidden",
+            "propertyName": "no_show_risk_score",
+            "label": "No-show risk score (0-1) — informational only",
+            "order": 16
+          },
+
+          {
+            "componentType": "plug",
+            "propertyName": "plug_book_appointment",
+            "label": "Book Appointment",
+            "description": "POST /appointments/book — books the slot. AI no-show scoring runs server-side. Confirmation email + SMS sent automatically.",
+            "trigger": "manual",
+            "triggeredBy": "btn_confirm_book",
+            "providers": [
+              {
+                "type": "HTTP",
+                "method": "POST",
+                "url": "{{connection.BRIGHTLITE_API_URL}}/appointments/book",
+                "headers": { "Content-Type": "application/json",
+                    "X-Client-ID":  "{{connection.BRIGHTLITE_CLIENT_ID}}",
+                    "X-API-Key":    "{{connection.BRIGHTLITE_API_KEY}}" },
+                "body": {
+                  "name":        "{{name}}",
+                  "email":       "{{email}}",
+                  "phone":       "{{phone}}",
+                  "serviceId":   "{{service_picker}}",
+                  "date":        "{{date_picker}}",
+                  "time":        "{{time_picker}}",
+                  "timezone":    "{{browser_timezone}}",
+                  "notes":       "{{notes}}",
+                  "otpTokenId":  "{{otp_token_id}}"
+                },
+                "onSuccess": {
+                  "mapOutputs": [
+                    { "source": "response.appointmentId",    "target": "appointment_id" },
+                    { "source": "response.confirmationCode", "target": "confirmation_code" },
+                    { "source": "response.noShowRiskScore",  "target": "no_show_risk_score" }
+                  ],
+                  "navigateTo": "mod-appt-step5-confirmation",
+                  "passFields": ["name", "email", "selected_service_label", "date_picker", "time_picker", "browser_timezone", "appointment_id", "confirmation_code"]
+                },
+                "onError": {
+                  "conditions": [
+                    {
+                      "when": "error.statusCode == 409",
+                      "actions": [
+                        { "type": "showNotification", "config": { "type": "warning", "message": "That slot was just taken. Please go back and pick another time." } },
+                        { "type": "navigate", "target": "mod-appt-step3" }
+                      ]
+                    },
+                    {
+                      "when": "error.statusCode != 409",
+                      "actions": [
+                        { "type": "showNotification", "config": { "type": "error", "message": "Booking failed. Please try again." } }
+                      ]
+                    }
+                  ]
+                }
+              }
+            ],
+            "order": 17
+          },
+
+          {
+            "componentType": "button",
+            "propertyName": "btn_confirm_book",
+            "label": "Confirm Appointment",
+            "style": "primary",
+            "triggers": "plug_book_appointment",
+            "order": 18
+          },
+
+          {
+            "componentType": "button",
+            "propertyName": "btn_back_step3",
+            "label": "← Change Date/Time",
+            "style": "secondary",
+            "navigateTo": "mod-appt-step3",
+            "order": 19
+          }
+
+        ]
+      },
+
+      {
+        "_id": "mod-appt-step5-confirmation",
+        "name": "Booking Confirmed",
+        "tag": "appt-step-5-confirm",
+        "description": "Shows the confirmation code to the user. Confirmation email and SMS have already been sent by the middleware.",
+
+        "components": [
+
+          {
+            "componentType": "hidden", "propertyName": "name",                   "order": 1
+          },
+          {
+            "componentType": "hidden", "propertyName": "email",                  "order": 2
+          },
+          {
+            "componentType": "hidden", "propertyName": "selected_service_label", "order": 3
+          },
+          {
+            "componentType": "hidden", "propertyName": "date_picker",            "order": 4
+          },
+          {
+            "componentType": "hidden", "propertyName": "time_picker",            "order": 5
+          },
+          {
+            "componentType": "hidden", "propertyName": "browser_timezone",       "order": 6
+          },
+          {
+            "componentType": "hidden", "propertyName": "appointment_id",         "order": 7
+          },
+          {
+            "componentType": "hidden", "propertyName": "confirmation_code",      "order": 8
+          },
+
+          {
+            "componentType": "heading",
+            "propertyName": "heading_confirmed",
+            "label": "You're Booked!",
+            "size": "h2",
+            "order": 9
+          },
+
+          {
+            "componentType": "output",
+            "propertyName": "output_confirmed_card",
+            "label": "<div style='padding:24px; border-radius:8px; background:#f0fdf4; border:1px solid #bbf7d0;'><p style='margin:0 0 16px; font-size:18px; font-weight:600; color:#166534;'>Appointment Confirmed</p><table style='width:100%; border-collapse:collapse;'><tr><td style='padding:6px 0; color:#555;'>Service</td><td><strong>{{selected_service_label}}</strong></td></tr><tr><td style='padding:6px 0; color:#555;'>Date</td><td><strong>{{date_picker}}</strong></td></tr><tr><td style='padding:6px 0; color:#555;'>Time</td><td><strong>{{time_picker}}</strong> ({{browser_timezone}})</td></tr><tr><td style='padding:6px 0; color:#555;'>Confirmation Code</td><td><strong style='font-size:18px; letter-spacing:0.1em;'>{{confirmation_code}}</strong></td></tr></table><p style='margin:16px 0 0; font-size:13px; color:#666;'>A confirmation has been sent to {{email}}.</p></div>",
+            "order": 10
+          },
+
+          {
+            "componentType": "button",
+            "propertyName": "btn_book_another",
+            "label": "Book Another Appointment",
+            "style": "secondary",
+            "navigateTo": "mod-appt-step1",
+            "order": 11
+          }
+
+        ]
+      },
+
+      {
+        "_id": "mod-appt-admin",
+        "name": "Admin — Appointments Dashboard",
+        "tag": "appt-admin",
+        "description": "Internal-only module. View all appointments, filter by date/status, and update status. Protect with Unqork role-based access (staff/admin only).",
+        "accessControl": {
+          "roles": ["admin", "staff"]
+        },
+
+        "components": [
+
+          {
+            "componentType": "heading",
+            "propertyName": "heading_admin",
+            "label": "Appointment Dashboard",
+            "size": "h2",
+            "order": 1
+          },
+
+          {
+            "componentType": "datePicker",
+            "propertyName": "filter_date",
+            "label": "Filter by Date",
+            "required": false,
+            "order": 2
+          },
+
+          {
+            "componentType": "dropdown",
+            "propertyName": "filter_status",
+            "label": "Filter by Status",
+            "defaultValue": "",
+            "options": [
+              { "label": "All",         "value": "" },
+              { "label": "Confirmed",   "value": "confirmed" },
+              { "label": "Cancelled",   "value": "cancelled" },
+              { "label": "Rescheduled", "value": "rescheduled" },
+              { "label": "Completed",   "value": "completed" },
+              { "label": "No Show",     "value": "no_show" }
+            ],
+            "order": 3
+          },
+
+          {
+            "componentType": "plug",
+            "propertyName": "plug_load_appointments",
+            "label": "Load Appointments",
+            "description": "GET /appointments",
+            "trigger": "onLoad",
+            "watchFields": ["filter_date", "filter_status"],
+            "providers": [
+              {
+                "type": "HTTP",
+                "method": "GET",
+                "url": "{{connection.BRIGHTLITE_API_URL}}/appointments",
+                "headers": {
+                  "X-Client-ID": "{{connection.BRIGHTLITE_CLIENT_ID}}",
+                  "X-API-Key":   "{{connection.BRIGHTLITE_API_KEY}}"
+                },
+                "queryParams": {
+                  "date":   "{{filter_date}}",
+                  "status": "{{filter_status}}"
+                },
+                "onSuccess": {
+                  "mapOutputs": [
+                    { "source": "response.data",  "target": "appointments_grid" },
+                    { "source": "response.total", "target": "total_count" }
+                  ]
+                }
+              }
+            ],
+            "order": 4
+          },
+
+          {
+            "componentType": "hidden",
+            "propertyName": "total_count",
+            "order": 5
+          },
+
+          {
+            "componentType": "output",
+            "propertyName": "output_count",
+            "label": "Showing {{total_count}} appointment(s)",
+            "order": 6
+          },
+
+          {
+            "componentType": "grid",
+            "propertyName": "appointments_grid",
+            "label": "Appointments",
+            "dataSource": "appointments_grid",
+            "columns": [
+              { "field": "confirmationCode", "header": "Code",       "width": "90px" },
+              { "field": "name",             "header": "Name",       "width": "160px" },
+              { "field": "email",            "header": "Email",      "width": "200px" },
+              { "field": "serviceLabel",     "header": "Service",    "width": "160px" },
+              { "field": "date",             "header": "Date",       "width": "110px" },
+              { "field": "time",             "header": "Time",       "width": "80px" },
+              { "field": "status",           "header": "Status",     "width": "120px", "badge": true, "editable": true,
+                "editOptions": ["confirmed", "cancelled", "rescheduled", "completed", "no_show"] },
+              { "field": "noShowRiskScore",  "header": "Risk",       "width": "70px",  "type": "riskBadge",
+                "thresholds": [
+                  { "max": 0.33, "label": "Low",  "color": "green" },
+                  { "max": 0.66, "label": "Med",  "color": "amber" },
+                  { "max": 1.0,  "label": "High", "color": "red" }
+                ]
+              },
+              { "field": "createdAt",        "header": "Booked",     "width": "150px", "type": "datetime" }
+            ],
+            "rowActions": [
+              {
+                "label": "Cancel",
+                "type": "trigger",
+                "triggers": "plug_cancel_appointment",
+                "confirm": "Cancel this appointment? The customer will be notified by email.",
+                "setFields": [
+                  { "target": "selected_appointment_id", "value": "{{row.id}}" },
+                  { "target": "update_status",           "value": "cancelled" }
+                ]
+              },
+              {
+                "label": "Mark Complete",
+                "type": "trigger",
+                "triggers": "plug_update_appointment",
+                "setFields": [
+                  { "target": "selected_appointment_id", "value": "{{row.id}}" },
+                  { "target": "update_status",           "value": "completed" }
+                ]
+              },
+              {
+                "label": "Mark No-Show",
+                "type": "trigger",
+                "triggers": "plug_update_appointment",
+                "setFields": [
+                  { "target": "selected_appointment_id", "value": "{{row.id}}" },
+                  { "target": "update_status",           "value": "no_show" }
+                ]
+              }
+            ],
+            "order": 7
+          },
+
+          {
+            "componentType": "hidden",
+            "propertyName": "selected_appointment_id",
+            "order": 8
+          },
+
+          {
+            "componentType": "hidden",
+            "propertyName": "update_status",
+            "order": 9
+          },
+
+          {
+            "componentType": "plug",
+            "propertyName": "plug_cancel_appointment",
+            "label": "Cancel Appointment",
+            "description": "PATCH /appointments/:id with status=cancelled — middleware sends cancellation email",
+            "trigger": "manual",
+            "providers": [
+              {
+                "type": "HTTP",
+                "method": "PATCH",
+                "url": "{{connection.BRIGHTLITE_API_URL}}/appointments/{{selected_appointment_id}}",
+                "headers": { "Content-Type": "application/json",
+                    "X-Client-ID":  "{{connection.BRIGHTLITE_CLIENT_ID}}",
+                    "X-API-Key":    "{{connection.BRIGHTLITE_API_KEY}}" },
+                "body": { "status": "cancelled" },
+                "onSuccess": {
+                  "showNotification": { "type": "success", "message": "Appointment cancelled. Customer notified." },
+                  "trigger": "plug_load_appointments"
+                }
+              }
+            ],
+            "order": 10
+          },
+
+          {
+            "componentType": "plug",
+            "propertyName": "plug_update_appointment",
+            "label": "Update Appointment Status",
+            "description": "PATCH /appointments/:id",
+            "trigger": "manual",
+            "providers": [
+              {
+                "type": "HTTP",
+                "method": "PATCH",
+                "url": "{{connection.BRIGHTLITE_API_URL}}/appointments/{{selected_appointment_id}}",
+                "headers": { "Content-Type": "application/json",
+                    "X-Client-ID":  "{{connection.BRIGHTLITE_CLIENT_ID}}",
+                    "X-API-Key":    "{{connection.BRIGHTLITE_API_KEY}}" },
+                "body": { "status": "{{update_status}}" },
+                "onSuccess": {
+                  "showNotification": { "type": "success", "message": "Status updated to {{update_status}}." },
+                  "trigger": "plug_load_appointments"
+                }
+              }
+            ],
+            "order": 11
+          },
+
+          {
+            "componentType": "button",
+            "propertyName": "btn_refresh",
+            "label": "Refresh",
+            "style": "secondary",
+            "triggers": "plug_load_appointments",
+            "order": 12
+          }
+
+        ]
+      }
+
+    ]
+  }
+}
