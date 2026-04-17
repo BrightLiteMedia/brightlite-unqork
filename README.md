@@ -71,34 +71,7 @@ See `.env.example` for all options. Key sections:
 
 Full interactive docs at `/docs` (Swagger UI). Summary below.
 
-### OTP (shared by both flows)
 
-```
-POST /otp/send
-Body: { "channel": "email" | "sms", "destination": "user@example.com" }
-→ Returns: { tokenId, expiresAt }
-
-POST /otp/verify
-Body: { "tokenId": "...", "code": "123456" }
-→ Returns: { valid: true | false }
-```
-
----
-
-### Contact / Intake
-
-```
-POST /contact/submit
-Body: { name, email, phone?, message, otpTokenId }
-→ Returns: { submissionId, category, sentiment, isSpam }
-
-GET  /contact/submissions?status=new&category=support
-→ Returns: { data: [...], total }
-
-GET  /contact/submissions/:id
-PATCH /contact/submissions/:id
-Body: { status?, internalNotes? }
-```
 
 **AI enrichment on every submission:**
 - Category: `sales | support | billing | complaint | general | other`
@@ -109,7 +82,6 @@ Body: { status?, internalNotes? }
 
 ---
 
-### Appointments
 
 ```
 GET  /appointments/services
@@ -143,11 +115,7 @@ Body: { message: "I need to reschedule" }
 - Extra SMS reminder automatically triggered for high-risk bookings
 - Natural language scheduling intent parsing
 
----
 
-## Typical Flow (Unqork Integration)
-
-### Contact Form
 ```
 Unqork Module 1 (Form)
   → POST /otp/send        (user enters email or phone)
@@ -161,10 +129,7 @@ Unqork Module 3 (Submit)
 Unqork Module 4 (Dashboard)
   → GET  /contact/submissions
   → PATCH /contact/submissions/:id
-```
 
-### Appointment Scheduler
-```
 Unqork Module 1 (Booker Info + OTP)
   → POST /otp/send
   → POST /otp/verify
@@ -185,57 +150,10 @@ Unqork Module 4 (Confirm)
 Unqork Module 5 (Admin Dashboard)
   → GET  /appointments
   → PATCH /appointments/:id
-```
-
----
-
-## Swapping the AI Provider
-
-Set `AI_PROVIDER` in `.env`:
-
-```env
-# Use Anthropic Claude (default)
-AI_PROVIDER=anthropic
-ANTHROPIC_API_KEY=sk-ant-...
-
-# Use OpenAI
-AI_PROVIDER=openai
-OPENAI_API_KEY=sk-...
-OPENAI_MODEL=gpt-4o
-```
 
 No code changes required. The AI service layer handles both providers transparently.
 
----
 
-## Swapping the Database
-
-Set `DB_ADAPTER` in `.env`:
-
-```env
-# Development / POC (default — no database needed)
-DB_ADAPTER=memory
-
-# PostgreSQL
-DB_ADAPTER=postgres
-POSTGRES_URL=postgresql://user:pass@host:5432/dbname
-
-# MongoDB
-DB_ADAPTER=mongodb
-MONGO_URL=mongodb://user:pass@host:27017/dbname
-```
-
-> **Note:** The `postgres` and `mongodb` adapters are scaffolded stubs.
-> Implement `src/adapters/postgres.adapter.ts` following the `DbAdapter`
-> interface in `src/types/index.ts`.
-
----
-
-## Deployment
-
-### Docker (recommended)
-
-```bash
 # Build
 docker build -t brightlite-middleware .
 
@@ -278,53 +196,6 @@ docker push <account>.dkr.ecr.<region>.amazonaws.com/brightlite-middleware:lates
 9. Import Unqork template into client's Unqork instance
 10. Point Unqork API integrations at the deployed middleware URL
 
-**Total onboarding time: 2–4 hours**
-
----
-
-## Project Structure
-
-```
-src/
-├── server.ts              # Fastify app, plugins, route registration
-├── config/index.ts        # Typed config from environment variables
-├── types/index.ts         # Shared TypeScript interfaces
-├── adapters/
-│   ├── index.ts           # Adapter factory
-│   └── memory.adapter.ts  # In-memory adapter (dev default)
-├── services/
-│   ├── otp.service.ts     # OTP generation, delivery, verification
-│   ├── email.service.ts   # SendGrid + SMTP abstraction
-│   ├── sms.service.ts     # Twilio SMS
-│   └── ai.service.ts      # Claude + OpenAI abstraction
-├── utils/
-│   └── scheduling.ts      # Slot generation, availability logic
-└── routes/
-    ├── otp.routes.ts
-    ├── contact.routes.ts
-    └── appointment.routes.ts
-```
-
----
-
-## Extending the Middleware
-
-### Adding a new database adapter
-1. Create `src/adapters/postgres.adapter.ts`
-2. Implement the `DbAdapter` interface from `src/types/index.ts`
-3. Add a `case 'postgres':` in `src/adapters/index.ts`
-
-### Adding a new AI feature
-1. Add a new function in `src/services/ai.service.ts`
-2. Call it from the relevant route handler
-3. Both Claude and OpenAI are available through the same `callAi()` helper
-
-### Adding a new route
-1. Create `src/routes/your-feature.routes.ts`
-2. Export an async Fastify plugin function
-3. Register it in `src/server.ts`
-
----
 
 ## Security Notes
 
